@@ -2,6 +2,9 @@
   "name": "fluxworker",
   "version": "0.1.0",
   "description": "Offload any pure function to a Web Worker with zero config. <2KB, TypeScript-native, auto lifecycle management.",
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "web worker",
     "background thread",
@@ -14,24 +17,24 @@
   ],
   "author": "Aditya",
   "license": "MIT",
-  "homepage": "https://github.com/YOUR_USERNAME/fluxworker#readme",
+  "homepage": "https://github.com/Cyberady/FluxWorker#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_USERNAME/fluxworker.git"
+    "url": "git+https://github.com/Cyberady/FluxWorker.git"
   },
   "bugs": {
-    "url": "https://github.com/YOUR_USERNAME/fluxworker/issues"
+    "url": "https://github.com/Cyberady/FluxWorker/issues"
   },
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
-    "exports": {
+  "exports": {
     ".": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.mjs",
-        "require": "./dist/index.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
     }
-    },
+  },
   "files": [
     "dist",
     "README.md",
