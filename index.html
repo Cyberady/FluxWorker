@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>FluxWorker — Off-Thread, On-Demand</title>
+<meta name="description" content="Offload any pure function to a Web Worker with one line of code. Zero config, TypeScript-native, under 2KB."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+/* ── TOKENS ─────────────────────────────────────────────────────── */
+:root {
+  --void:    #080810;
+  --surface: #0E0E1C;
+  --card:    #12121F;
+  --border:  rgba(255,255,255,0.07);
+  --cyan:    #00D4FF;
+  --cyan-lo: rgba(0,212,255,0.10);
+  --cyan-md: rgba(0,212,255,0.22);
+  --cyan-gl: rgba(0,212,255,0.40);
+  --violet:  #7C3AFF;
+  --vio-lo:  rgba(124,58,255,0.12);
+  --green:   #00E896;
+  --red:     #FF4560;
+  --text:    #F5F4F0;
+  --muted:   #7A7A96;
+  --display: 'Syne', sans-serif;
+  --body:    'Inter', sans-serif;
+  --mono:    'JetBrains Mono', monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--void);color:var(--text);font-family:var(--body);font-size:16px;line-height:1.6;overflow-x:hidden}
+
+/* ── AMBIENT BG ─────────────────────────────────────────────────── */
+body::before{
+  content:'';position:fixed;inset:0;z-index:0;
+  background:
+    radial-gradient(ellipse 60% 40% at 15% 20%, rgba(0,212,255,0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 50% at 85% 70%, rgba(124,58,255,0.06) 0%, transparent 60%);
+  pointer-events:none;
+}
+canvas#bg{position:fixed;inset:0;z-index:0;opacity:.25;pointer-events:none}
+
+/* ── NAV ────────────────────────────────────────────────────────── */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:200;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 48px;height:64px;
+  background:rgba(8,8,16,0.80);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+}
+.nav-logo{display:flex;align-items:center;gap:10px;text-decoration:none}
+.nav-logo-mark{
+  width:30px;height:30px;border-radius:8px;
+  background:linear-gradient(135deg,var(--cyan),var(--violet));
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.nav-logo-text{font-family:var(--display);font-size:1rem;font-weight:700;color:var(--text);letter-spacing:-0.02em}
+.nav-logo-text span{color:var(--cyan)}
+.nav-links{display:flex;align-items:center;gap:32px}
+.nav-links a{color:var(--muted);text-decoration:none;font-size:.875rem;font-weight:500;transition:color .2s}
+.nav-links a:hover{color:var(--text)}
+.nav-right{display:flex;align-items:center;gap:16px}
+.github-link{
+  display:flex;align-items:center;gap:7px;
+  color:var(--muted);text-decoration:none;font-size:.8rem;font-weight:500;
+  border:1px solid var(--border);border-radius:8px;padding:6px 12px;
+  transition:color .2s,border-color .2s,background .2s;
+}
+.github-link:hover{color:var(--text);border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.04)}
+.npm-pill{
+  font-family:var(--mono);font-size:.68rem;font-weight:500;
+  color:var(--cyan);background:var(--cyan-lo);border:1px solid var(--cyan-md);
+  border-radius:6px;padding:4px 10px;letter-spacing:.04em;
+}
+
+/* ── HERO ───────────────────────────────────────────────────────── */
+#hero{
+  position:relative;z-index:1;
+  min-height:100vh;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  padding:120px 48px 80px;text-align:center;
+}
+.hero-eyebrow{
+  display:flex;align-items:center;gap:10px;justify-content:center;
+  font-family:var(--mono);font-size:.72rem;font-weight:500;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--cyan);
+  margin-bottom:28px;
+}
+.hero-eyebrow-line{width:36px;height:1px;background:linear-gradient(90deg,transparent,var(--cyan))}
+.hero-eyebrow-line.r{transform:scaleX(-1)}
+#thread-svg{width:220px;height:80px;margin-bottom:28px}
+h1{
+  font-family:var(--display);
+  font-size:clamp(3.2rem,8vw,7rem);
+  font-weight:800;line-height:1.0;letter-spacing:-.04em;
+  margin-bottom:24px;
+}
+h1 .w1{display:block;color:var(--text)}
+h1 .w2{
+  display:block;
+  background:linear-gradient(125deg,var(--cyan) 0%,var(--violet) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.hero-sub{
+  font-size:clamp(1rem,2vw,1.15rem);color:var(--muted);
+  max-width:520px;margin:0 auto 44px;line-height:1.75;
+}
+.hero-ctas{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.btn-primary{
+  display:inline-flex;align-items:center;gap:8px;
+  background:var(--cyan);color:#000;
+  font-family:var(--body);font-weight:600;font-size:.875rem;
+  border:none;padding:13px 26px;border-radius:9px;
+  cursor:pointer;text-decoration:none;
+  box-shadow:0 0 28px var(--cyan-gl);
+  transition:transform .15s,box-shadow .15s;
+}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 0 44px var(--cyan-gl)}
+.btn-ghost{
+  display:inline-flex;align-items:center;gap:8px;
+  background:transparent;color:var(--text);
+  font-family:var(--body);font-weight:500;font-size:.875rem;
+  border:1px solid var(--border);padding:13px 26px;border-radius:9px;
+  cursor:pointer;text-decoration:none;
+  transition:border-color .2s,background .2s;
+}
+.btn-ghost:hover{border-color:rgba(255,255,255,.2);background:rgba(255,255,255,.04)}
+
+/* ── STATS ──────────────────────────────────────────────────────── */
+.stats-strip{
+  position:relative;z-index:1;
+  display:flex;justify-content:center;
+  background:var(--surface);
+  border-top:1px solid var(--border);border-bottom:1px solid var(--border);
+}
+.stat-item{
+  flex:1;max-width:200px;padding:28px 20px;text-align:center;
+  border-right:1px solid var(--border);
+}
+.stat-item:last-child{border-right:none}
+.stat-n{font-family:var(--mono);font-size:1.9rem;font-weight:500;color:var(--cyan);display:block;line-height:1;margin-bottom:5px}
+.stat-l{font-size:.75rem;color:var(--muted);letter-spacing:.04em}
+
+/* ── SECTION WRAPPER ────────────────────────────────────────────── */
+.wrap{position:relative;z-index:1;max-width:1160px;margin:0 auto;padding:88px 48px}
+.sec-tag{font-family:var(--mono);font-size:.68rem;font-weight:500;letter-spacing:.15em;text-transform:uppercase;color:var(--violet);margin-bottom:14px}
+h2{font-family:var(--display);font-size:clamp(1.9rem,4vw,2.8rem);font-weight:700;letter-spacing:-.03em;line-height:1.15;margin-bottom:14px}
+.sec-sub{color:var(--muted);font-size:1rem;max-width:500px;margin-bottom:52px;line-height:1.7}
+
+/* ── CODE BLOCK ─────────────────────────────────────────────────── */
+.cb{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-top:0}
+.cb-bar{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;background:rgba(255,255,255,.025);border-bottom:1px solid var(--border)}
+.cb-dots{display:flex;gap:6px}
+.cb-dots i{width:10px;height:10px;border-radius:50%;display:block}
+.cb-dots i:nth-child(1){background:#FF5F57}
+.cb-dots i:nth-child(2){background:#FFBD2E}
+.cb-dots i:nth-child(3){background:#28CA42}
+.cb-name{font-family:var(--mono);font-size:.68rem;color:var(--muted)}
+pre{padding:24px 26px;font-family:var(--mono);font-size:.8rem;line-height:1.8;overflow-x:auto}
+.kw{color:#C792EA}.fn{color:#82AAFF}.st{color:#C3E88D}.cm{color:#546E7A;font-style:italic}.ty{color:#89DDFF}.cx{color:var(--cyan)}.nm{color:#F78C6C}
+
+/* ── DEMO ───────────────────────────────────────────────────────── */
+.demo-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:44px}
+.demo-card{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.demo-card.bad{border-color:rgba(255,69,96,.28)}
+.demo-card.good{border-color:rgba(0,232,150,.22)}
+.demo-head{display:flex;align-items:center;gap:10px;padding:15px 22px;border-bottom:1px solid var(--border)}
+.pill{font-family:var(--mono);font-size:.65rem;font-weight:500;letter-spacing:.08em;text-transform:uppercase;border-radius:5px;padding:3px 8px}
+.bad .pill{background:rgba(255,69,96,.12);color:var(--red);border:1px solid rgba(255,69,96,.28)}
+.good .pill{background:rgba(0,232,150,.08);color:var(--green);border:1px solid rgba(0,232,150,.22)}
+.demo-label{font-weight:500;font-size:.875rem}
+.demo-body{padding:22px}
+.track{height:54px;background:var(--surface);border-radius:8px;position:relative;overflow:hidden;margin-bottom:18px}
+.ball{width:22px;height:22px;border-radius:50%;position:absolute;top:50%;transform:translateY(-50%);animation:roll 1.1s linear infinite}
+.bad .ball{background:var(--red);box-shadow:0 0 10px rgba(255,69,96,.5)}
+.good .ball{background:var(--green);box-shadow:0 0 10px rgba(0,232,150,.45)}
+@keyframes roll{0%{left:4px}50%{left:calc(100% - 26px)}100%{left:4px}}
+.frozen .ball{animation-play-state:paused}
+.demo-note{font-size:.82rem;color:var(--muted);margin-bottom:18px;line-height:1.5}
+.demo-note strong{color:var(--text)}
+.result-box{
+  background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  padding:12px 14px;font-family:var(--mono);font-size:.75rem;
+  color:var(--muted);min-height:48px;transition:border-color .3s,color .3s;
+}
+.result-box.done{border-color:var(--cyan-md);color:var(--cyan)}
+.run-btn{
+  width:100%;padding:11px;margin-top:14px;
+  font-family:var(--body);font-weight:600;font-size:.85rem;
+  border:none;border-radius:8px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:opacity .2s,transform .15s;
+}
+.run-btn:hover{transform:translateY(-1px)}
+.run-btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.bad .run-btn{background:rgba(255,69,96,.15);color:var(--red);border:1px solid rgba(255,69,96,.28)}
+.good .run-btn{background:var(--cyan-lo);color:var(--cyan);border:1px solid var(--cyan-md)}
+.jank-log{background:var(--card);border:1px solid rgba(255,189,0,.2);border-radius:12px;padding:18px 22px;margin-top:20px;display:none}
+.jank-log.on{display:block}
+.jank-head{font-family:var(--mono);font-size:.68rem;font-weight:500;color:#FFBD2E;margin-bottom:10px;letter-spacing:.1em;display:flex;align-items:center;gap:8px}
+.jank-entry{font-family:var(--mono);font-size:.72rem;color:#FFBD2E;padding:6px 0;border-bottom:1px solid rgba(255,189,0,.1);opacity:0;animation:fi .4s forwards}
+@keyframes fi{to{opacity:1}}
+
+/* ── FEATURES ───────────────────────────────────────────────────── */
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.feat-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:26px;transition:border-color .25s,transform .25s}
+.feat-card:hover{border-color:var(--cyan-md);transform:translateY(-3px)}
+.feat-icon{width:40px;height:40px;border-radius:10px;background:var(--cyan-lo);border:1px solid var(--cyan-md);display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+.feat-icon svg{width:18px;height:18px;stroke:var(--cyan);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.feat-name{font-weight:600;font-size:.95rem;margin-bottom:7px}
+.feat-desc{font-size:.82rem;color:var(--muted);line-height:1.6}
+
+/* ── TABLE ──────────────────────────────────────────────────────── */
+.tbl-wrap{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th,td{padding:15px 20px;text-align:left;font-size:.85rem;border-bottom:1px solid var(--border)}
+thead th{background:rgba(255,255,255,.03);font-family:var(--mono);font-size:.68rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+thead th:nth-child(2){color:var(--cyan)}
+tbody tr{transition:background .15s}
+tbody tr:hover{background:rgba(255,255,255,.02)}
+tbody tr:last-child td{border-bottom:none}
+.yes{color:var(--green);font-weight:600}
+.no{color:var(--red)}
+.warn{color:#FFBD2E}
+td.feat{font-weight:500}
+
+/* ── ARCH ───────────────────────────────────────────────────────── */
+.arch-flow{display:flex;margin-top:40px;background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.arch-step{flex:1;padding:26px 18px;text-align:center;border-right:1px solid var(--border);position:relative}
+.arch-step:last-child{border-right:none}
+.arch-arrow{position:absolute;right:-12px;top:50%;transform:translateY(-50%);z-index:2}
+.arch-arrow svg{width:24px;height:24px;stroke:var(--cyan);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.arch-step:last-child .arch-arrow{display:none}
+.arch-icon{width:36px;height:36px;border-radius:9px;background:var(--cyan-lo);border:1px solid var(--cyan-md);display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
+.arch-icon svg{width:16px;height:16px;stroke:var(--cyan);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.arch-tag{font-family:var(--mono);font-size:.62rem;color:var(--cyan);font-weight:500;letter-spacing:.08em;margin-bottom:6px}
+.arch-name{font-weight:600;font-size:.875rem;margin-bottom:5px}
+.arch-desc{font-size:.75rem;color:var(--muted);line-height:1.5}
+
+/* ── ROADMAP ────────────────────────────────────────────────────── */
+.roadmap{display:flex;flex-direction:column}
+.phase{display:flex;gap:28px;padding:28px 0;border-bottom:1px solid var(--border)}
+.phase:last-child{border-bottom:none}
+.phase-left{width:110px;flex-shrink:0;text-align:right;padding-top:2px}
+.phase-tag{font-family:var(--mono);font-size:.68rem;font-weight:500;letter-spacing:.08em;text-transform:uppercase}
+.phase:nth-child(1) .phase-tag{color:var(--green)}
+.phase:nth-child(2) .phase-tag{color:var(--cyan)}
+.phase:nth-child(3) .phase-tag{color:var(--violet)}
+.phase-spine{display:flex;flex-direction:column;align-items:center;width:20px;flex-shrink:0}
+.phase-dot{width:12px;height:12px;border-radius:50%;border:2px solid;margin-top:2px;flex-shrink:0;background:var(--void)}
+.phase:nth-child(1) .phase-dot{border-color:var(--green);box-shadow:0 0 8px rgba(0,232,150,.5)}
+.phase:nth-child(2) .phase-dot{border-color:var(--cyan)}
+.phase:nth-child(3) .phase-dot{border-color:var(--violet)}
+.phase-line{flex:1;width:1px;background:var(--border);margin-top:4px}
+.phase:last-child .phase-line{display:none}
+.phase-content{flex:1}
+.phase-title{font-weight:600;font-size:.975rem;margin-bottom:5px}
+.phase-desc{font-size:.84rem;color:var(--muted);line-height:1.6}
+.phase-done{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:.65rem;color:var(--green);margin-top:8px}
+.phase-done svg{width:13px;height:13px;stroke:var(--green);fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── FOOTER ─────────────────────────────────────────────────────── */
+footer{position:relative;z-index:1;border-top:1px solid var(--border);padding:32px 48px;display:flex;align-items:center;justify-content:space-between}
+.foot-logo{font-family:var(--display);font-size:.95rem;font-weight:700;letter-spacing:-.02em;color:var(--text)}
+.foot-logo span{color:var(--cyan)}
+.foot-links{display:flex;gap:24px}
+.foot-links a{color:var(--muted);text-decoration:none;font-size:.8rem;transition:color .2s}
+.foot-links a:hover{color:var(--text)}
+.foot-copy{font-family:var(--mono);font-size:.7rem;color:var(--muted)}
+
+/* ── GLOW DIVIDER ───────────────────────────────────────────────── */
+.glow-div{position:relative;z-index:1;height:1px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:.25}
+
+/* ── RESPONSIVE ─────────────────────────────────────────────────── */
+@media(max-width:860px){
+  nav{padding:0 20px}
+  .nav-links{display:none}
+  .wrap{padding:64px 20px}
+  #hero{padding:100px 20px 60px}
+  .demo-grid{grid-template-columns:1fr}
+  .feat-grid{grid-template-columns:1fr}
+  .arch-flow{flex-direction:column}
+  .arch-step{border-right:none;border-bottom:1px solid var(--border)}
+  .arch-arrow{display:none}
+  .stats-strip{flex-wrap:wrap}
+  .stat-item{min-width:50%}
+  footer{flex-direction:column;gap:16px;text-align:center;padding:24px 20px}
+  .phase{flex-direction:column;gap:10px}
+  .phase-left{width:auto;text-align:left}
+  .phase-spine{flex-direction:row;width:auto;height:20px}
+  .phase-line{width:40px;height:1px;flex:0 0 auto;margin-top:0;margin-left:4px}
+}
+</style>
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+
+<!-- ══ NAV ══════════════════════════════════════════════════════════ -->
+<nav>
+  <a href="#" class="nav-logo">
+    <div class="nav-logo-mark">
+      <!-- bolt icon -->
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+    </div>
+    <span class="nav-logo-text">Flux<span>Worker</span></span>
+  </a>
+
+  <div class="nav-links">
+    <a href="#demo">Demo</a>
+    <a href="#features">Features</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#roadmap">Roadmap</a>
+  </div>
+
+  <div class="nav-right">
+    <a href="https://github.com/Cyberady/FluxWorker" target="_blank" rel="noopener" class="github-link">
+      <!-- GitHub icon -->
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+      GitHub
+    </a>
+    <span class="npm-pill">v0.1.0</span>
+  </div>
+</nav>
+
+<!-- ══ HERO ══════════════════════════════════════════════════════════ -->
+<section id="hero">
+  <div class="hero-eyebrow">
+    <div class="hero-eyebrow-line"></div>
+    Zero Config &nbsp;·&nbsp; TypeScript-Native &nbsp;·&nbsp; Under 2KB
+    <div class="hero-eyebrow-line r"></div>
+  </div>
+
+  <!-- Thread-split SVG animation — the signature element -->
+  <svg id="thread-svg" viewBox="0 0 220 80" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="glow"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    </defs>
+    <!-- main input line -->
+    <line class="t-in" x1="10" y1="40" x2="80" y2="40" stroke="#00D4FF" stroke-width="2" stroke-linecap="round" filter="url(#glow)"/>
+    <!-- split node -->
+    <circle cx="80" cy="40" r="5" fill="#00D4FF" filter="url(#glow)" opacity=".9"/>
+    <!-- 4 output threads -->
+    <line class="t-out t1" x1="80" y1="40" x2="210" y2="12" stroke="#00D4FF" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="60" stroke-dashoffset="60" filter="url(#glow)" opacity=".85"/>
+    <line class="t-out t2" x1="80" y1="40" x2="210" y2="27" stroke="#7C3AFF" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="60" stroke-dashoffset="60" filter="url(#glow)" opacity=".75"/>
+    <line class="t-out t3" x1="80" y1="40" x2="210" y2="53" stroke="#7C3AFF" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="60" stroke-dashoffset="60" filter="url(#glow)" opacity=".75"/>
+    <line class="t-out t4" x1="80" y1="40" x2="210" y2="68" stroke="#00D4FF" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="60" stroke-dashoffset="60" filter="url(#glow)" opacity=".85"/>
+    <!-- end dots -->
+    <circle class="t-dot" cx="210" cy="12" r="3.5" fill="#00D4FF" opacity="0"/>
+    <circle class="t-dot" cx="210" cy="27" r="3.5" fill="#7C3AFF" opacity="0"/>
+    <circle class="t-dot" cx="210" cy="53" r="3.5" fill="#7C3AFF" opacity="0"/>
+    <circle class="t-dot" cx="210" cy="68" r="3.5" fill="#00D4FF" opacity="0"/>
+  </svg>
+
+  <h1>
+    <span class="w1">Stop Janking.</span>
+    <span class="w2">Start FluxWorking.</span>
+  </h1>
+  <p class="hero-sub">Offload any heavy computation to a background thread with one line of code. No separate files. No postMessage wiring. No type safety lost.</p>
+  <div class="hero-ctas">
+    <a href="#demo" class="btn-primary">
+      <!-- play icon -->
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      See Live Demo
+    </a>
+    <a href="https://github.com/Cyberady/FluxWorker" target="_blank" rel="noopener" class="btn-ghost">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+      View on GitHub
+    </a>
+  </div>
+</section>
+
+<!-- ══ STATS ══════════════════════════════════════════════════════════ -->
+<div class="stats-strip">
+  <div class="stat-item"><span class="stat-n">&lt;2KB</span><span class="stat-l">Gzipped bundle</span></div>
+  <div class="stat-item"><span class="stat-n">0</span><span class="stat-l">Extra files needed</span></div>
+  <div class="stat-item"><span class="stat-n">16ms</span><span class="stat-l">Jank threshold</span></div>
+  <div class="stat-item"><span class="stat-n">100%</span><span class="stat-l">Type-safe API</span></div>
+</div>
+
+<!-- ══ PROBLEM ═══════════════════════════════════════════════════════ -->
+<div class="wrap">
+  <div class="sec-tag">// The Problem</div>
+  <h2>The Worker Barrier is<br/>killing your UX.</h2>
+  <p class="sec-sub">Every heavy calculation runs on the same thread as your UI. The standard fix requires separate files, manual wiring, and zero type safety — so most developers just skip it.</p>
+  <div class="cb">
+    <div class="cb-bar"><div class="cb-dots"><i></i><i></i><i></i></div><span class="cb-name">the-old-way.ts — too much boilerplate</span></div>
+    <pre><span class="cm">// ① Separate file you must maintain</span>
+<span class="cm">// worker.ts</span>
+<span class="kw">self</span>.<span class="fn">addEventListener</span>(<span class="st">'message'</span>, (e) =&gt; {
+  <span class="kw">const</span> result = e.data * e.data;
+  <span class="kw">self</span>.<span class="fn">postMessage</span>(result);
+});
+
+<span class="cm">// ② Manual wiring in main.ts — no types, no promises</span>
+<span class="kw">const</span> worker = <span class="kw">new</span> <span class="ty">Worker</span>(<span class="kw">new</span> <span class="ty">URL</span>(<span class="st">'./worker.ts'</span>, import.meta.url));
+worker.<span class="fn">postMessage</span>(<span class="nm">42</span>);
+worker.<span class="fn">addEventListener</span>(<span class="st">'message'</span>, (e) =&gt; {
+  console.<span class="fn">log</span>(e.data); <span class="cm">// any type. no autocomplete. good luck.</span>
+});
+<span class="cm">// ③ Don't forget to .terminate() or you have a memory leak. Forever.</span></pre>
+  </div>
+</div>
+
+<!-- ══ SOLUTION ═══════════════════════════════════════════════════════ -->
+<div class="glow-div"></div>
+<div class="wrap" id="api">
+  <div class="sec-tag">// The Solution</div>
+  <h2>One function.<br/>Zero friction.</h2>
+  <p class="sec-sub">FluxWorker serializes your function, spawns a Worker from a Blob URL, and returns a fully-typed Promise. The Worker terminates itself when done.</p>
+  <div class="cb">
+    <div class="cb-bar"><div class="cb-dots"><i></i><i></i><i></i></div><span class="cb-name">fluxworker-usage.ts</span></div>
+    <pre><span class="kw">import</span> { <span class="cx">createWorker</span>, <span class="cx">jankMonitor</span> } <span class="kw">from</span> <span class="st">'fluxworker'</span>;
+
+<span class="cm">// Any pure function — no changes needed</span>
+<span class="kw">const</span> <span class="fn">heavyFib</span> = (n: <span class="ty">number</span>): <span class="ty">number</span> =&gt; {
+  <span class="kw">if</span> (n &lt;= <span class="nm">1</span>) <span class="kw">return</span> n;
+  <span class="kw">return</span> <span class="fn">heavyFib</span>(n - <span class="nm">1</span>) + <span class="fn">heavyFib</span>(n - <span class="nm">2</span>);
+};
+
+<span class="cm">// Wrap it — that's literally it</span>
+<span class="kw">const</span> workerFib = <span class="cx">createWorker</span>(heavyFib);
+<span class="cm">//    ^ TypeScript infers: (n: number) =&gt; Promise&lt;number&gt; 🎯</span>
+
+<span class="cm">// Call it just like before — but async</span>
+<span class="kw">const</span> result = <span class="kw">await</span> <span class="fn">workerFib</span>(<span class="nm">42</span>);
+<span class="cm">// UI never froze. Worker terminated. Blob URL revoked. Clean.</span>
+
+<span class="cm">// Optional: dev-mode jank detection</span>
+<span class="kw">if</span> (import.meta.env.DEV) <span class="cx">jankMonitor</span>.<span class="fn">enable</span>();</pre>
+  </div>
+</div>
+
+<!-- ══ DEMO ════════════════════════════════════════════════════════════ -->
+<div class="glow-div"></div>
+<div class="wrap" id="demo">
+  <div class="sec-tag">// Live Demo</div>
+  <h2>Feel the freeze.<br/>Then feel the fix.</h2>
+  <p class="sec-sub">Both buttons compute fib(42) — a ~2 second CPU task. Watch the bouncing ball. That ball is your UI thread.</p>
+
+  <div class="demo-grid">
+    <div class="demo-card bad">
+      <div class="demo-head">
+        <span class="pill">Without FluxWorker</span>
+        <span class="demo-label">Main Thread</span>
+      </div>
+      <div class="demo-body">
+        <div class="track" id="track-main"><div class="ball" id="ball-main"></div></div>
+        <p class="demo-note">Thread: <strong>Shared with your computation</strong><br/>Ball freezes while fib(42) runs.</p>
+        <div class="result-box" id="res-main">Waiting — click Run to start.</div>
+        <button class="run-btn" id="btn-main" onclick="runMain()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Run on Main Thread
+        </button>
+      </div>
+    </div>
+
+    <div class="demo-card good">
+      <div class="demo-head">
+        <span class="pill">With FluxWorker</span>
+        <span class="demo-label">Background Thread</span>
+      </div>
+      <div class="demo-body">
+        <div class="track" id="track-worker"><div class="ball" id="ball-worker"></div></div>
+        <p class="demo-note">Thread: <strong>Free — UI stays live</strong><br/>Ball keeps moving while fib(42) runs.</p>
+        <div class="result-box" id="res-worker">Waiting — click Run to start.</div>
+        <button class="run-btn" id="btn-worker" onclick="runWorker()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Run with FluxWorker
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="jank-log" id="jank-log">
+    <div class="jank-head">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFBD2E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      JANK MONITOR — fluxworker/dev
+    </div>
+    <div id="jank-entries"></div>
+  </div>
+</div>
+
+<!-- ══ FEATURES ═══════════════════════════════════════════════════════ -->
+<div class="glow-div"></div>
+<div class="wrap" id="features">
+  <div class="sec-tag">// Features</div>
+  <h2>Everything it needs.<br/>Nothing it doesn't.</h2>
+  <p class="sec-sub">A micro-library that solves one problem with ruthless focus.</p>
+  <div class="feat-grid">
+
+    <div class="feat-card">
+      <div class="feat-icon">
+        <!-- zap / dynamic spawn -->
+        <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      </div>
+      <div class="feat-name">Dynamic Worker Spawning</div>
+      <div class="feat-desc">Converts any function to a Blob URL and spawns a Worker on the fly. No build plugins, no separate files, no Webpack config.</div>
+    </div>
+
+    <div class="feat-card">
+      <div class="feat-icon">
+        <!-- shield / type safety -->
+        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </div>
+      <div class="feat-name">Full Type Inference</div>
+      <div class="feat-desc"><code style="font-family:var(--mono);font-size:.78em;color:var(--cyan)">createWorker(fn)</code> returns a typed async version of your function — arguments and return type inferred automatically.</div>
+    </div>
+
+    <div class="feat-card">
+      <div class="feat-icon">
+        <!-- activity / jank monitor -->
+        <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <div class="feat-name">Jank Monitor</div>
+      <div class="feat-desc">Dev-mode tool that measures execution time. If any function blocks the main thread for &gt;16ms it logs an actionable warning with the fix.</div>
+    </div>
+
+    <div class="feat-card">
+      <div class="feat-icon">
+        <!-- refresh-cw / smart fallback -->
+        <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+      </div>
+      <div class="feat-name">Smart Fallback</div>
+      <div class="feat-desc">If Workers aren't available (SSR, older browsers), FluxWorker silently executes locally. Your code doesn't change. It doesn't throw.</div>
+    </div>
+
+    <div class="feat-card">
+      <div class="feat-icon">
+        <!-- trash-2 / lifecycle -->
+        <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+      </div>
+      <div class="feat-name">Auto Lifecycle Management</div>
+      <div class="feat-desc">Every Worker is terminated and its Blob URL revoked immediately after resolution or rejection. Zero memory leaks on every exit path.</div>
+    </div>
+
+    <div class="feat-card">
+      <div class="feat-icon">
+        <!-- cpu / shared memory -->
+        <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+      </div>
+      <div class="feat-name">SharedArrayBuffer Ready</div>
+      <div class="feat-desc">Pass typed arrays via SharedArrayBuffer for zero-copy data transfer — essential for ML inference, image processing, and audio pipelines.</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ COMPARISON TABLE ═══════════════════════════════════════════════ -->
+<div class="glow-div"></div>
+<div class="wrap">
+  <div class="sec-tag">// vs The Competition</div>
+  <h2>How FluxWorker<br/>stacks up.</h2>
+  <p class="sec-sub" style="margin-bottom:40px">Compared against Comlink, the current community standard.</p>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Feature</th><th>FluxWorker</th><th>Comlink</th><th>Raw Worker</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="feat">Zero separate files</td><td class="yes">Yes</td><td class="no">Needs worker file</td><td class="no">Needs worker file</td></tr>
+        <tr><td class="feat">Bundle size</td><td class="yes">&lt;2KB</td><td class="no">~5KB</td><td class="yes">0KB</td></tr>
+        <tr><td class="feat">Promise / async-await</td><td class="yes">Native</td><td class="yes">Via Proxy</td><td class="no">Manual callback</td></tr>
+        <tr><td class="feat">TypeScript inferred</td><td class="yes">Automatic</td><td class="warn">Manual types</td><td class="no">None</td></tr>
+        <tr><td class="feat">Auto cleanup on done</td><td class="yes">Yes</td><td class="no">Manual .terminate()</td><td class="no">Manual</td></tr>
+        <tr><td class="feat">Jank detection</td><td class="yes">Built-in</td><td class="no">None</td><td class="no">None</td></tr>
+        <tr><td class="feat">SSR / no-Worker fallback</td><td class="yes">Yes</td><td class="no">Throws</td><td class="no">Throws</td></tr>
+        <tr><td class="feat">SharedArrayBuffer</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══ ARCHITECTURE ═══════════════════════════════════════════════════ -->
+<div class="glow-div"></div>
+<div class="wrap" id="architecture">
+  <div class="sec-tag">// Architecture</div>
+  <h2>Four layers.<br/>One clean abstraction.</h2>
+  <p class="sec-sub" style="margin-bottom:0">Every call through <code style="font-family:var(--mono);font-size:.9em;color:var(--cyan)">createWorker</code> passes through this pipeline.</p>
+  <div class="arch-flow">
+
+    <div class="arch-step">
+      <div class="arch-icon">
+        <svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      </div>
+      <div class="arch-tag">01 · Serialize</div>
+      <div class="arch-name">Serializer Engine</div>
+      <div class="arch-desc">fn.toString() wrapped in Worker boilerplate, converted to a Blob URL</div>
+      <div class="arch-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+    </div>
+
+    <div class="arch-step">
+      <div class="arch-icon">
+        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      </div>
+      <div class="arch-tag">02 · Bridge</div>
+      <div class="arch-name">Communication Bridge</div>
+      <div class="arch-desc">Unique request ID per call — postMessage in, result out, no cross-talk</div>
+      <div class="arch-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+    </div>
+
+    <div class="arch-step">
+      <div class="arch-icon">
+        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </div>
+      <div class="arch-tag">03 · Guard</div>
+      <div class="arch-name">Safety Proxy</div>
+      <div class="arch-desc">try/catch inside the Worker — crashes reject the Promise, never hang the app</div>
+      <div class="arch-arrow"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+    </div>
+
+    <div class="arch-step">
+      <div class="arch-icon">
+        <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg>
+      </div>
+      <div class="arch-tag">04 · Clean</div>
+      <div class="arch-name">Lifecycle Manager</div>
+      <div class="arch-desc">worker.terminate() + URL.revokeObjectURL() on every resolve and reject path</div>
+      <div class="arch-arrow"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ SOURCE ═════════════════════════════════════════════════════════ -->
+<div class="glow-div"></div>
+<div class="wrap">
+  <div class="sec-tag">// Source</div>
+  <h2>The entire library.<br/>Under 80 lines.</h2>
+  <p class="sec-sub" style="margin-bottom:32px">This is the real implementation. No magic. No dependencies.</p>
+  <div class="cb">
+    <div class="cb-bar"><div class="cb-dots"><i></i><i></i><i></i></div><span class="cb-name">src/index.ts — full source</span></div>
+    <pre><span class="kw">type</span> <span class="ty">AnyFn</span> = (...args: <span class="ty">any</span>[]) =&gt; <span class="ty">any</span>;
+<span class="kw">export type</span> <span class="ty">WorkerFn</span>&lt;T <span class="kw">extends</span> <span class="ty">AnyFn</span>&gt; =
+  (...args: <span class="ty">Parameters</span>&lt;T&gt;) =&gt; <span class="ty">Promise</span>&lt;<span class="ty">Awaited</span>&lt;<span class="ty">ReturnType</span>&lt;T&gt;&gt;&gt;;
+
+<span class="kw">export const</span> <span class="cx">jankMonitor</span> = {
+  _enabled: <span class="kw">false</span>,
+  <span class="fn">enable</span>()  { <span class="kw">this</span>._enabled = <span class="kw">true</span>; },
+  <span class="fn">disable</span>() { <span class="kw">this</span>._enabled = <span class="kw">false</span>; },
+  <span class="fn">measure</span>&lt;T&gt;(name: <span class="ty">string</span>, callFn: () =&gt; T): T {
+    <span class="kw">if</span> (!<span class="kw">this</span>._enabled) <span class="kw">return</span> <span class="fn">callFn</span>();
+    <span class="kw">const</span> t0 = performance.<span class="fn">now</span>();
+    <span class="kw">const</span> result = <span class="fn">callFn</span>();
+    <span class="kw">const</span> ms = performance.<span class="fn">now</span>() - t0;
+    <span class="kw">if</span> (ms &gt; <span class="nm">16</span>) console.<span class="fn">warn</span>(<span class="st">`[FluxWorker] "${name}" blocked ${ms.toFixed(1)}ms — wrap it.`</span>);
+    <span class="kw">return</span> result;
+  }
+};
+
+<span class="kw">export function</span> <span class="fn">createWorker</span>&lt;T <span class="kw">extends</span> <span class="ty">AnyFn</span>&gt;(fn: T): <span class="ty">WorkerFn</span>&lt;T&gt; {
+  <span class="kw">if</span> (<span class="kw">typeof</span> Worker === <span class="st">'undefined'</span>)
+    <span class="kw">return</span> ((...args) =&gt; { <span class="kw">try</span> { <span class="kw">return</span> <span class="ty">Promise</span>.<span class="fn">resolve</span>(<span class="fn">fn</span>(...args)); }
+                            <span class="kw">catch</span>(e) { <span class="kw">return</span> <span class="ty">Promise</span>.<span class="fn">reject</span>(e); } }) <span class="kw">as</span> <span class="ty">WorkerFn</span>&lt;T&gt;;
+
+  <span class="kw">return function</span>(...args) {
+    <span class="kw">return new</span> <span class="ty">Promise</span>((resolve, reject) =&gt; {
+      <span class="cm">// ① Serialize</span>
+      <span class="kw">const</span> src = <span class="st">`const fn=${fn.toString()};self.onmessage=e=>{try{const r=fn(...e.data.args);r?.then?r.then(v=>self.postMessage({id:e.data.id,result:v})).catch(err=>self.postMessage({id:e.data.id,error:String(err)})):self.postMessage({id:e.data.id,result:r})}catch(err){self.postMessage({id:e.data.id,error:String(err)})}};`</span>;
+      <span class="kw">const</span> url    = <span class="ty">URL</span>.<span class="fn">createObjectURL</span>(<span class="kw">new</span> <span class="ty">Blob</span>([src], {type:<span class="st">'application/javascript'</span>}));
+      <span class="kw">const</span> worker = <span class="kw">new</span> <span class="ty">Worker</span>(url);
+      <span class="kw">const</span> id     = Math.<span class="fn">random</span>().<span class="fn">toString</span>(<span class="nm">36</span>).<span class="fn">slice</span>(<span class="nm">2</span>);
+      <span class="cm">// ② Bridge</span>
+      worker.<span class="fn">postMessage</span>({ id, args });
+      <span class="cm">// ③ Guard + ④ Clean</span>
+      <span class="kw">const</span> <span class="fn">done</span> = (ok: <span class="ty">boolean</span>, val: <span class="ty">any</span>) =&gt; {
+        worker.<span class="fn">terminate</span>(); <span class="ty">URL</span>.<span class="fn">revokeObjectURL</span>(url);
+        ok ? <span class="fn">resolve</span>(val) : <span class="fn">reject</span>(<span class="kw">new</span> <span class="ty">Error</span>(val));
+      };
+      worker.<span class="fn">onmessage</span>  = e =&gt; <span class="fn">done</span>(!e.data.error, e.data.error ?? e.data.result);
+      worker.<span class="fn">onerror</span>    = e =&gt; <span class="fn">done</span>(<span class="kw">false</span>, e.message);
+    });
+  } <span class="kw">as</span> <span class="ty">WorkerFn</span>&lt;T&gt;;
+}</pre>
+  </div>
+</div>
+
+<!-- ══ ROADMAP ════════════════════════════════════════════════════════ -->
+<div class="glow-div"></div>
+<div class="wrap" id="roadmap">
+  <div class="sec-tag">// Roadmap</div>
+  <h2>Three phases.<br/>Ship after Phase 3.</h2>
+  <p class="sec-sub" style="margin-bottom:48px">The build plan — commit after each phase.</p>
+  <div class="roadmap">
+
+    <div class="phase">
+      <div class="phase-left"><span class="phase-tag">Phase 1<br/>MVP</span></div>
+      <div class="phase-spine"><div class="phase-dot"></div><div class="phase-line"></div></div>
+      <div class="phase-content">
+        <div class="phase-title">Core createWorker — The Loop</div>
+        <div class="phase-desc">Serializer Engine + Communication Bridge. Goal: square a number off the main thread, verify the round-trip end-to-end.</div>
+        <div class="phase-done">
+          <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          Shipped
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-left"><span class="phase-tag">Phase 2<br/>Types</span></div>
+      <div class="phase-spine"><div class="phase-dot"></div><div class="phase-line"></div></div>
+      <div class="phase-content">
+        <div class="phase-title">TypeScript Generics + Jank Monitor</div>
+        <div class="phase-desc">WorkerFn&lt;T&gt; generic so your IDE autocompletes arguments. jankMonitor for dev-time warnings. Smart SSR fallback.</div>
+        <div class="phase-done">
+          <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          Shipped
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-left"><span class="phase-tag">Phase 3<br/>Demo</span></div>
+      <div class="phase-spine"><div class="phase-dot"></div></div>
+      <div class="phase-content">
+        <div class="phase-title">The Show-Off Demo — Make People Feel It</div>
+        <div class="phase-desc">Side-by-side demo with a real visual indicator. Deploy to Vercel. Share the link. This page is that demo.</div>
+        <div class="phase-done">
+          <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          You're looking at it
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ FOOTER ═════════════════════════════════════════════════════════ -->
+<div class="glow-div"></div>
+<footer>
+  <span class="foot-logo">Flux<span>Worker</span></span>
+  <div class="foot-links">
+    <a href="https://github.com/Cyberady/FluxWorker" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://www.npmjs.com/package/fluxworker" target="_blank" rel="noopener">npm</a>
+    <a href="#demo">Demo</a>
+    <a href="#api">API</a>
+  </div>
+  <span class="foot-copy">MIT · Built by Aditya</span>
+</footer>
+
+<!-- ══ SCRIPTS ════════════════════════════════════════════════════════ -->
+<script>
+/* ── Particle canvas ───────────────────────────────────────────────── */
+(function(){
+  const c = document.getElementById('bg');
+  const x = c.getContext('2d');
+  let W, H, pts = [];
+  function resize(){ W = c.width = innerWidth; H = c.height = innerHeight; }
+  addEventListener('resize', resize); resize();
+  for(let i=0;i<70;i++) pts.push({ x:Math.random()*1e4%W, y:Math.random()*1e4%H, vx:(Math.random()-.5)*.35, vy:(Math.random()-.5)*.35, a:Math.random()*.4+.1 });
+  function draw(){
+    x.clearRect(0,0,W,H);
+    pts.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; if(p.x<0||p.x>W) p.vx*=-1; if(p.y<0||p.y>H) p.vy*=-1; x.beginPath(); x.arc(p.x,p.y,1.2,0,6.28); x.fillStyle=`rgba(0,212,255,${p.a})`; x.fill(); });
+    for(let i=0;i<pts.length;i++) for(let j=i+1;j<pts.length;j++){
+      const dx=pts[i].x-pts[j].x, dy=pts[i].y-pts[j].y, d=Math.sqrt(dx*dx+dy*dy);
+      if(d<90){ x.beginPath(); x.moveTo(pts[i].x,pts[i].y); x.lineTo(pts[j].x,pts[j].y); x.strokeStyle=`rgba(0,212,255,${.07*(1-d/90)})`; x.lineWidth=.5; x.stroke(); }
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+/* ── Thread-split SVG animation ────────────────────────────────────── */
+(function(){
+  const outs = document.querySelectorAll('.t-out');
+  const dots = document.querySelectorAll('.t-dot');
+  function animateThreads(){
+    outs.forEach((l,i)=>{
+      const delay = i * 140;
+      setTimeout(()=>{
+        l.style.transition = 'stroke-dashoffset .55s cubic-bezier(.4,0,.2,1)';
+        l.style.strokeDashoffset = '0';
+        setTimeout(()=>{ dots[i].style.transition='opacity .2s'; dots[i].style.opacity='1'; }, 500+delay);
+      }, delay);
+    });
+    setTimeout(()=>{
+      outs.forEach(l=>{ l.style.transition='stroke-dashoffset .4s'; l.style.strokeDashoffset='60'; });
+      dots.forEach(d=>{ d.style.transition='opacity .2s'; d.style.opacity='0'; });
+      setTimeout(animateThreads, 700);
+    }, 2200);
+  }
+  setTimeout(animateThreads, 600);
+})();
+
+/* ── FluxWorker (inlined) ──────────────────────────────────────────── */
+function createWorker(fn){
+  if(typeof Worker==='undefined') return (...a)=>{ try{ return Promise.resolve(fn(...a)); }catch(e){ return Promise.reject(e); } };
+  return function(...args){
+    return new Promise((resolve,reject)=>{
+      const src=`const fn=${fn.toString()};self.onmessage=e=>{try{const r=fn(...e.data.args);self.postMessage({id:e.data.id,result:r});}catch(err){self.postMessage({id:e.data.id,error:String(err)});}};`;
+      const url=URL.createObjectURL(new Blob([src],{type:'application/javascript'}));
+      const w=new Worker(url);
+      const id=Math.random().toString(36).slice(2);
+      w.postMessage({id,args});
+      w.onmessage=e=>{ w.terminate(); URL.revokeObjectURL(url); e.data.error?reject(new Error(e.data.error)):resolve(e.data.result); };
+      w.onerror=e=>{ w.terminate(); URL.revokeObjectURL(url); reject(new Error(e.message)); };
+    });
+  };
+}
+
+function fib(n){ return n<=1?n:fib(n-1)+fib(n-2); }
+const workerFib = createWorker(fib);
+
+function addJankEntry(msg){
+  const log=document.getElementById('jank-log');
+  const entries=document.getElementById('jank-entries');
+  log.classList.add('on');
+  const el=document.createElement('div');
+  el.className='jank-entry'; el.textContent=msg;
+  entries.appendChild(el);
+}
+
+async function runMain(){
+  const btn=document.getElementById('btn-main');
+  const res=document.getElementById('res-main');
+  const track=document.getElementById('track-main');
+  btn.disabled=true;
+  res.textContent='Running fib(42) on main thread…'; res.classList.remove('done');
+  await new Promise(r=>setTimeout(r,60));
+  const t0=performance.now();
+  track.classList.add('frozen');
+  const val=fib(42);
+  const ms=(performance.now()-t0);
+  track.classList.remove('frozen');
+  if(ms>16) addJankEntry(`fib() blocked the main thread for ${ms.toFixed(0)}ms  →  Try: const workerFib = createWorker(fib)`);
+  res.textContent=`fib(42) = ${val} — took ${ms.toFixed(0)}ms — UI was FROZEN the entire time`;
+  res.classList.add('done');
+  btn.disabled=false;
+}
+
+async function runWorker(){
+  const btn=document.getElementById('btn-worker');
+  const res=document.getElementById('res-worker');
+  btn.disabled=true;
+  res.textContent='Running fib(42) in background Worker…'; res.classList.remove('done');
+  const t0=performance.now();
+  const val=await workerFib(42);
+  const ms=(performance.now()-t0);
+  res.textContent=`fib(42) = ${val} — took ${ms.toFixed(0)}ms — UI stayed SMOOTH the whole time`;
+  res.classList.add('done');
+  btn.disabled=false;
+}
+</script>
+</body>
+</html>
