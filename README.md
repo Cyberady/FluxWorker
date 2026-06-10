@@ -133,7 +133,7 @@ createWorker(fn)
 
 ## Live Demo
 
-[**fluxworker-demo.vercel.app**](https://fluxworker-demo.vercel.app) — See the UI freeze vs. smooth comparison in real time.
+[**fluxworker-demo**](https://cyberady.github.io/FluxWorker/) — See the UI freeze vs. smooth comparison in real time.
 
 ---
 
