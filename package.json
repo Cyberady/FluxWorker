@@ -1,0 +1,58 @@
+{
+  "name": "fluxworker",
+  "version": "0.1.0",
+  "description": "Offload any pure function to a Web Worker with zero config. <2KB, TypeScript-native, auto lifecycle management.",
+  "keywords": [
+    "web worker",
+    "background thread",
+    "performance",
+    "jank",
+    "typescript",
+    "async",
+    "offload",
+    "comlink alternative"
+  ],
+  "author": "Aditya",
+  "license": "MIT",
+  "homepage": "https://github.com/YOUR_USERNAME/fluxworker#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/fluxworker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YOUR_USERNAME/fluxworker/issues"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+    "exports": {
+    ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.mjs",
+        "require": "./dist/index.js"
+    }
+    },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --minify",
+    "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.5.0"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "sideEffects": false
+}
